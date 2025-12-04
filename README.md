@@ -1,6 +1,25 @@
 # FraudDetectionsuingvLLM
 Fraud Detection using AI and vLLM
 
+## Environment setup
+
+Create a virtual environment and install the stack-specific dependencies listed below. Each requirements file is scoped to the main components we will build in Month 1.
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+Install the desired environment:
+
+- Flask service: `pip install -r requirements-flask.txt`
+- XGBoost modeling: `pip install -r requirements-xgboost.txt`
+- vLLM inference: `pip install -r requirements-vllm.txt`
+
+Notes:
+- The vLLM environment assumes a CUDA-ready host when running GPU-backed inference; install the matching CUDA-enabled PyTorch wheels if needed.
+- You can safely install multiple files into the same virtual environment if you want an all-in-one stack for local development.
+
 Month 1 — Foundations + AI Layer (Weeks 1–4)
 Week 1
 
