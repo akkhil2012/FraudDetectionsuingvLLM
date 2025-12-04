@@ -20,6 +20,42 @@ Notes:
 - The vLLM environment assumes a CUDA-ready host when running GPU-backed inference; install the matching CUDA-enabled PyTorch wheels if needed.
 - You can safely install multiple files into the same virtual environment if you want an all-in-one stack for local development.
 
+## Build steps
+
+Follow these steps to build and run the project locally:
+
+1. **Create and activate a virtual environment** (recommended to keep dependencies isolated):
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
+
+2. **Install dependencies** for the component you want to work on (or install all three if you need the full stack):
+   ```bash
+   pip install -r requirements-flask.txt
+   pip install -r requirements-xgboost.txt
+   pip install -r requirements-vllm.txt
+   ```
+
+3. **Validate the environment** by running a quick import check for key packages (helps confirm GPU-enabled installs):
+   ```bash
+   python - <<'PY'
+   import flask, xgboost
+   import torch
+   print('Flask version:', flask.__version__)
+   print('XGBoost version:', xgboost.__version__)
+   print('Torch CUDA available:', torch.cuda.is_available())
+   PY
+   ```
+
+4. **(Optional) Run the Flask skeleton** after installing `requirements-flask.txt`:
+   ```bash
+   export FLASK_APP=app.py  # update if your entrypoint differs
+   flask run --host=0.0.0.0 --port=5000
+   ```
+
+These steps ensure dependencies are installed and the base service can start locally before layering on modeling or vLLM-specific workflows.
+
 Month 1 — Foundations + AI Layer (Weeks 1–4)
 Week 1
 
