@@ -1,0 +1,580 @@
+openapi: 3.0.3
+info:
+  title: Fraud Detection API
+  version: "1.0.0"
+  description: |
+    OpenAPI contract for the Fraud Detection service backed by Flask, XGBoost, and vLLM.
+    The specification mirrors the API contracts outlined in `api_contracts.md`, including
+    synchronous and asynchronous scoring flows, feature ingestion, and admin controls.
+servers:
+  - url: /api
+    description: Base API prefix
+security:
+  - bearerAuth: []
+paths:
+  /v1/fraud/score:
+    post:
+      summary: Real-time fraud scoring for a single transaction
+      operationId: scoreTransaction
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScoreRequest'
+            examples:
+              default:
+                value:
+                  transaction:
+                    transaction_id: txn_123
+                    user_id: user_42
+                    amount: 199.99
+                    currency: USD
+                    timestamp: "2025-01-01T12:00:00Z"
+                    channel: web
+                    ip_address: 203.0.113.10
+                  features:
+                    browser_language: en-US
+                  explain: true
+      responses:
+        '200':
+          description: Score computed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    $ref: '#/components/schemas/ScoreResponse'
+                required:
+                  - result
+              examples:
+                default:
+                  value:
+                    result:
+                      transaction_id: txn_123
+                      score: 0.87
+                      risk_label: high
+                      reasons:
+                        - velocity_high
+                        - geolocation_mismatch
+                      model_version: fraud-v1.2.3
+                      latency_ms: 132
+                      trace_id: 3c5fd784-3e44-4fb6-bc8d-59f53e407bfb
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/fraud/score/batch:
+    post:
+      summary: Batch scoring for multiple transactions (sync or async)
+      operationId: batchScoreTransactions
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - name: async
+          in: query
+          description: Force asynchronous processing
+          required: false
+          schema:
+            type: boolean
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchScoreRequest'
+            examples:
+              sync:
+                value:
+                  transactions:
+                    - transaction_id: txn_123
+                      user_id: user_42
+                      amount: 19.99
+                      currency: USD
+                      timestamp: "2025-01-01T12:00:00Z"
+                  explain: false
+                  max_latency_ms: 2000
+      responses:
+        '200':
+          description: Synchronous batch scoring completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchScoreSyncResponse'
+        '202':
+          description: Batch accepted for asynchronous processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchScoreAsyncResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/fraud/jobs/{job_id}:
+    get:
+      summary: Retrieve status and results for an async batch job
+      operationId: getJobStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          description: Job identifier returned from async batch submission
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job status retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AsyncJobStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/features/ingest:
+    post:
+      summary: Ingest feature updates or labeled outcomes
+      operationId: ingestFeatures
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeaturesIngestRequest'
+            examples:
+              default:
+                value:
+                  records:
+                    - transaction_id: txn_123
+                      label: fraudulent
+                      features:
+                        chargeback: true
+                        dispute_reason: card_not_present
+                      occurred_at: "2025-01-02T09:00:00Z"
+      responses:
+        '202':
+          description: Records accepted for downstream processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeaturesIngestResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: Payload too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/admin/models/refresh:
+    post:
+      summary: Trigger model refresh or warm-start of the vLLM runtime
+      operationId: refreshModels
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelRefreshRequest'
+            examples:
+              default:
+                value:
+                  model: fraud-v1
+                  warm: true
+      responses:
+        '202':
+          description: Refresh initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelRefreshResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /v1/health:
+    get:
+      summary: Lightweight health probe
+      operationId: healthcheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      description: Ensures safe retries for mutating requests
+      required: false
+      schema:
+        type: string
+  responses:
+    BadRequest:
+      description: Validation failure
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Unauthorized:
+      description: Missing or invalid token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    TooManyRequests:
+      description: Rate limited
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying
+          schema:
+            type: integer
+        X-RateLimit-Limit:
+          description: Request limit for the window
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          description: Remaining requests in the window
+          schema:
+            type: integer
+        X-RateLimit-Reset:
+          description: Epoch seconds until reset
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    InternalError:
+      description: Unexpected failure
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+  schemas:
+    TransactionPayload:
+      type: object
+      required:
+        - transaction_id
+        - user_id
+        - amount
+        - currency
+        - timestamp
+      properties:
+        transaction_id:
+          type: string
+        user_id:
+          type: string
+        amount:
+          type: number
+          format: double
+        currency:
+          type: string
+          description: ISO 4217 currency code
+        merchant_id:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        channel:
+          type: string
+          description: Channel such as web, mobile, in_person
+        ip_address:
+          type: string
+          format: ip
+        device_id:
+          type: string
+        location:
+          type: object
+          properties:
+            lat:
+              type: number
+              format: double
+            lon:
+              type: number
+              format: double
+        metadata:
+          type: object
+          additionalProperties: true
+    ScoreRequest:
+      type: object
+      required:
+        - transaction
+      properties:
+        transaction:
+          $ref: '#/components/schemas/TransactionPayload'
+        features:
+          type: object
+          additionalProperties: true
+          description: Optional derived features
+        explain:
+          type: boolean
+          default: false
+    ScoreResponse:
+      type: object
+      required:
+        - transaction_id
+        - score
+        - risk_label
+        - model_version
+        - latency_ms
+        - trace_id
+      properties:
+        transaction_id:
+          type: string
+        score:
+          type: number
+          format: double
+        risk_label:
+          type: string
+          enum: [low, medium, high]
+        reasons:
+          type: array
+          items:
+            type: string
+        model_version:
+          type: string
+        latency_ms:
+          type: number
+        trace_id:
+          type: string
+          format: uuid
+    BatchScoreRequest:
+      type: object
+      required:
+        - transactions
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionPayload'
+        explain:
+          type: boolean
+          default: false
+        max_latency_ms:
+          type: integer
+          description: Optional SLA hint to fall back to async if exceeded
+    BatchScoreSyncResponse:
+      type: object
+      required:
+        - mode
+        - results
+        - trace_id
+      properties:
+        mode:
+          type: string
+          enum: [sync]
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScoreResponse'
+        trace_id:
+          type: string
+          format: uuid
+    BatchScoreAsyncResponse:
+      type: object
+      required:
+        - mode
+        - job_id
+        - estimated_completion_ms
+        - trace_id
+      properties:
+        mode:
+          type: string
+          enum: [async]
+        job_id:
+          type: string
+          format: uuid
+        estimated_completion_ms:
+          type: integer
+        trace_id:
+          type: string
+          format: uuid
+    AsyncJobStatus:
+      type: object
+      required:
+        - job_id
+        - status
+        - submitted_at
+        - trace_id
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, running, succeeded, failed]
+        submitted_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScoreResponse'
+        error:
+          type: object
+          nullable: true
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+        trace_id:
+          type: string
+          format: uuid
+    FeaturesIngestRecord:
+      type: object
+      required:
+        - transaction_id
+        - occurred_at
+      properties:
+        transaction_id:
+          type: string
+        label:
+          type: string
+          description: Optional outcome label (e.g., fraudulent)
+        features:
+          type: object
+          additionalProperties: true
+        occurred_at:
+          type: string
+          format: date-time
+    FeaturesIngestRequest:
+      type: object
+      required:
+        - records
+      properties:
+        records:
+          type: array
+          items:
+            $ref: '#/components/schemas/FeaturesIngestRecord'
+    FeaturesIngestResponse:
+      type: object
+      required:
+        - ingested
+        - failed
+        - trace_id
+      properties:
+        ingested:
+          type: integer
+        failed:
+          type: integer
+        trace_id:
+          type: string
+          format: uuid
+    ModelRefreshRequest:
+      type: object
+      properties:
+        model:
+          type: string
+        warm:
+          type: boolean
+          default: false
+    ModelRefreshResponse:
+      type: object
+      required:
+        - model
+        - action
+        - trace_id
+      properties:
+        model:
+          type: string
+        action:
+          type: string
+          example: refresh_requested
+        trace_id:
+          type: string
+          format: uuid
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - version
+        - uptime_s
+      properties:
+        status:
+          type: string
+          example: ok
+        version:
+          type: string
+        uptime_s:
+          type: integer
+    ErrorEnvelope:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+        trace_id:
+          type: string
+          format: uuid
