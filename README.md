@@ -8,6 +8,8 @@ Finalize PRD, architecture diagrams, and API contracts.
 
 Define ingestion schemas and lineage schema.
 
+- [x] Canonical ingestion schemas and lineage schema documented in `ingestion_and_lineage_schemas.md`.
+
 Set up environments for Flask, XGBoost, and vLLM.
 
 Week 2
