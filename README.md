@@ -3,14 +3,14 @@ Fraud Detection using AI and vLLM
 
 ## Environment setup
 
-Create a virtual environment and install the stack-specific dependencies listed below. Each requirements file is scoped to the main components we will build in Month 1.
+Use Python 3.10–3.12 (tested locally with 3.11) when creating the virtual environment. Newer runtimes such as Python 3.14 will trigger build-resolution errors from upstream dependencies (e.g., pip trying to pull the unavailable `numpy==2.0.0rc1`). Create a virtual environment and install the stack-specific dependencies listed below. Each requirements file is scoped to the main components we will build in Month 1.
 
 ```bash
-python3 -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
 ```
 
-Install the desired environment:
+If you need to stick with a system-wide `python3`, confirm it resolves to 3.12 or below (e.g., `python3 --version`). Install the desired environment:
 
 - Flask service: `pip install -r requirements-flask.txt`
 - XGBoost modeling: `pip install -r requirements-xgboost.txt`
